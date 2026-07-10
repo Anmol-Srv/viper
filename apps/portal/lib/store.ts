@@ -19,6 +19,7 @@ export type ProjectRecord = {
   clientId: string;
   clientSecret: string; // plaintext, laptop-v1 — see SPEC §6 hardening note. Never in HTTP responses.
   deployTokenHash: string;
+  deployToken?: string; // plaintext (same trust envelope as clientSecret) — enables zip REGENERATION on download so re-downloads always carry the current template. Never in HTTP responses.
   coolify: { configured: boolean; appUuid?: string; url?: string };
   lastImageTag?: string;
   lastDeployAt?: string;

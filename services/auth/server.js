@@ -39,6 +39,13 @@ db.exec(`
 try {
   db.exec('ALTER TABLE projects ADD COLUMN open_enrollment INTEGER DEFAULT 0');
 } catch {}
+// Migration: permissions had no uniqueness, so seeds re-inserted duplicate rows on every boot
+// (surfaced by GET /roles). Dedupe once, then enforce uniqueness so INSERT OR IGNORE works.
+db.exec(`
+  DELETE FROM permissions WHERE rowid NOT IN
+    (SELECT MIN(rowid) FROM permissions GROUP BY project_id, role, perm);
+  CREATE UNIQUE INDEX IF NOT EXISTS permissions_unique ON permissions(project_id, role, perm);
+`);
 
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 const otps = new Map(); // `${projectId}:${email}` -> { otp, exp }
@@ -51,8 +58,31 @@ function seedProject(projectId) {
   p.run(projectId, 'owner', '*');
   p.run(projectId, 'member', 'read');
 }
+// ORDER BY rowid keeps insertion order deterministic — the unique index would otherwise
+// make SQLite return index (alphabetical) order.
 const permsFor = (projectId, role) =>
-  db.prepare('SELECT perm FROM permissions WHERE project_id=? AND role=?').all(projectId, role).map((x) => x.perm);
+  db.prepare('SELECT perm FROM permissions WHERE project_id=? AND role=? ORDER BY rowid').all(projectId, role).map((x) => x.perm);
+
+// --- Roles/permissions CRUD helpers ---------------------------------------
+const ROLE_NAME_RE = /^[a-z0-9-]{1,32}$/;
+const SEED_ROLES = new Set(['owner', 'member']);
+
+// Trims + dedupes a permission list; null return means the input was malformed (caller sends 400).
+function normalizePermissions(perms) {
+  if (perms == null) return [];
+  if (!Array.isArray(perms)) return null;
+  const seen = new Set();
+  const out = [];
+  for (const raw of perms) {
+    const perm = String(raw).trim();
+    if (!perm || perm.length > 64) return null;
+    if (!seen.has(perm)) {
+      seen.add(perm);
+      out.push(perm);
+    }
+  }
+  return out;
+}
 
 // Idempotent seed: the Viper portal dogfoods its own auth service as an open-enrollment project.
 // No clientId/clientSecret — the portal talks to this service directly (server-side), not as a
@@ -132,15 +162,37 @@ function getSmtpTransport() {
   return smtpTransport;
 }
 
-function otpEmailBody(otp, projectName) {
-  return `Your ${projectName} sign-in code is: ${otp}\n\nThis code expires in 10 minutes. If you didn't request this, ignore this email.`;
+// Project name never appears bare in an email — an empty/missing name (bad data, deleted
+// project, whatever) falls back to "Viper" everywhere a name is interpolated.
+const emailProjectName = (projectName) => String(projectName || '').trim() || 'Viper';
+
+const otpEmailSubject = (projectName, otp) => `[${emailProjectName(projectName)}] Your sign-in code: ${otp}`;
+
+// Display-name from address, shared by both transports below (Postmark wants a formatted
+// string, nodemailer wants a {name, address} object — otpEmailFrom returns the object and
+// callers format it per-transport).
+const otpEmailFrom = (projectName) => ({ name: `${emailProjectName(projectName)} (Viper)`, address: MAIL_FROM });
+
+function otpEmailBody(projectName, otp) {
+  const name = emailProjectName(projectName);
+  return [
+    `Hi, here's your ${name} sign-in code:`,
+    '',
+    otp,
+    '',
+    'This code expires in 10 minutes.',
+    `Requested from ${name} — if this wasn't you, ignore this email.`,
+    '',
+    '— Viper',
+  ].join('\n');
 }
 
 // Sends the OTP by whatever transport is configured; dev fallback just logs it (caller decides
 // whether to also return devOtp in the HTTP response).
 async function sendOtp(email, otp, projectName) {
-  const subject = `${projectName} sign-in code: ${otp}`;
-  const text = otpEmailBody(otp, projectName);
+  const subject = otpEmailSubject(projectName, otp);
+  const text = otpEmailBody(projectName, otp);
+  const from = otpEmailFrom(projectName);
   if (POSTMARK_TOKEN) {
     const res = await fetch('https://api.postmarkapp.com/email', {
       method: 'POST',
@@ -149,13 +201,13 @@ async function sendOtp(email, otp, projectName) {
         Accept: 'application/json',
         'X-Postmark-Server-Token': POSTMARK_TOKEN,
       },
-      body: JSON.stringify({ From: MAIL_FROM, To: email, Subject: subject, TextBody: text }),
+      body: JSON.stringify({ From: `"${from.name}" <${from.address}>`, To: email, Subject: subject, TextBody: text }),
     });
     if (!res.ok) throw new Error(`postmark send failed: ${res.status} ${await res.text()}`);
     return;
   }
   if (SMTP_URL) {
-    await getSmtpTransport().sendMail({ from: MAIL_FROM, to: email, subject, text });
+    await getSmtpTransport().sendMail({ from, to: email, subject, text });
     return;
   }
   console.log(`[viper-auth] OTP for ${email} @ ${projectName}: ${otp}`);
@@ -220,6 +272,62 @@ app.delete('/projects/:id/members/:email', async (req, reply) => {
     if (c <= 1) return reply.code(400).send({ error: 'cannot remove the last owner' });
   }
   db.prepare('DELETE FROM members WHERE project_id=? AND email=?').run(projectId, email);
+  return { ok: true };
+});
+
+// List a project's roles with their permission sets.
+app.get('/projects/:id/roles', async (req, reply) => {
+  const projectId = req.params.id;
+  if (!requireProjectMemberAuth(req, reply, projectId)) return;
+  const roles = db.prepare('SELECT name FROM roles WHERE project_id=?').all(projectId);
+  return { roles: roles.map((r) => ({ name: r.name, permissions: permsFor(projectId, r.name) })) };
+});
+
+// Create a custom role with an optional initial permission set.
+app.post('/projects/:id/roles', async (req, reply) => {
+  const projectId = req.params.id;
+  if (!requireProjectMemberAuth(req, reply, projectId)) return;
+  const { name, permissions } = req.body || {};
+  if (!ROLE_NAME_RE.test(String(name || ''))) return reply.code(400).send({ error: 'name must be 1-32 chars, lowercase a-z0-9-' });
+  const perms = normalizePermissions(permissions);
+  if (perms === null) return reply.code(400).send({ error: 'permissions must be strings, 1-64 chars each' });
+  if (db.prepare('SELECT 1 FROM roles WHERE project_id=? AND name=?').get(projectId, name))
+    return reply.code(409).send({ error: 'role already exists' });
+  db.prepare('INSERT INTO roles (project_id, name) VALUES (?,?)').run(projectId, name);
+  const ins = db.prepare('INSERT INTO permissions (project_id, role, perm) VALUES (?,?,?)');
+  for (const perm of perms) ins.run(projectId, name, perm);
+  return { ok: true };
+});
+
+// Replace a role's permission set wholesale (full replace, not merge).
+app.put('/projects/:id/roles/:name', async (req, reply) => {
+  const projectId = req.params.id;
+  if (!requireProjectMemberAuth(req, reply, projectId)) return;
+  const name = req.params.name;
+  if (!db.prepare('SELECT 1 FROM roles WHERE project_id=? AND name=?').get(projectId, name))
+    return reply.code(404).send({ error: 'unknown role' });
+  const perms = normalizePermissions((req.body || {}).permissions);
+  if (perms === null) return reply.code(400).send({ error: 'permissions must be strings, 1-64 chars each' });
+  db.prepare('DELETE FROM permissions WHERE project_id=? AND role=?').run(projectId, name);
+  const ins = db.prepare('INSERT INTO permissions (project_id, role, perm) VALUES (?,?,?)');
+  for (const perm of perms) ins.run(projectId, name, perm);
+  return { ok: true };
+});
+
+// Delete a role. Refuses the two seed roles (every project always has owner/member) and refuses
+// a role still assigned to a member — same "keep the graph consistent" rule as the last-owner
+// protection on DELETE /members/:email.
+app.delete('/projects/:id/roles/:name', async (req, reply) => {
+  const projectId = req.params.id;
+  if (!requireProjectMemberAuth(req, reply, projectId)) return;
+  const name = req.params.name;
+  if (!db.prepare('SELECT 1 FROM roles WHERE project_id=? AND name=?').get(projectId, name))
+    return reply.code(404).send({ error: 'unknown role' });
+  if (SEED_ROLES.has(name)) return reply.code(400).send({ error: 'cannot delete a seed role' });
+  if (db.prepare('SELECT 1 FROM members WHERE project_id=? AND role=?').get(projectId, name))
+    return reply.code(400).send({ error: 'role is assigned to a member' });
+  db.prepare('DELETE FROM roles WHERE project_id=? AND name=?').run(projectId, name);
+  db.prepare('DELETE FROM permissions WHERE project_id=? AND role=?').run(projectId, name);
   return { ok: true };
 });
 
@@ -316,4 +424,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { app, db };
+module.exports = { app, db, otpEmailSubject, otpEmailFrom, otpEmailBody };

@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
   }
 
   // never leak the deploy token hash or the client secret to the client
-  const projects = rows.map(({ deployTokenHash, clientSecret, ...p }) => p);
+  const projects = rows.map(({ deployTokenHash, clientSecret, deployToken, ...p }) => p);
   return NextResponse.json({ projects, coolifyConfigured: coolify.configured(), me: user });
 }
 
@@ -103,6 +103,7 @@ export async function POST(req: NextRequest) {
     clientId,
     clientSecret,
     deployTokenHash: sha(deployToken),
+    deployToken, // plaintext — powers zip regeneration on download (see download route)
     coolify: { configured: coolify.configured() },
     deploys: [],
     db,

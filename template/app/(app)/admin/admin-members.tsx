@@ -3,47 +3,40 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardTitle } from '@/components/ui/card';
-import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
+import type { Member, RoleDef } from './admin-panel';
 
-type Member = { email: string; role: string; status: string };
-type Role = 'owner' | 'member';
+// ponytail: seed roles always exist server-side; this fallback only covers the split second
+// before the first roles fetch resolves so the select never renders with zero options.
+const FALLBACK_ROLES = ['owner', 'member'];
 
-async function fetchMembers(): Promise<{ members: Member[] | null; unavailable: boolean }> {
-  try {
-    const res = await fetch('/api/admin/members', { cache: 'no-store' });
-    const data = await res.json();
-    if (!data.success) return { members: null, unavailable: true };
-    return { members: data.data ?? [], unavailable: false };
-  } catch {
-    return { members: null, unavailable: true };
-  }
-}
+export function AdminMembers({
+  members,
+  roles,
+  onChange,
+}: {
+  members: Member[];
+  roles: RoleDef[];
+  onChange: () => void;
+}) {
+  const roleNames = roles.length ? roles.map((r) => r.name) : FALLBACK_ROLES;
 
-export function AdminMembers() {
-  const [members, setMembers] = useState<Member[] | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState(members);
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<Role>('member');
+  const [role, setRole] = useState(roleNames[0]);
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [inviting, setInviting] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
 
-  const load = async () => {
-    const result = await fetchMembers();
-    setMembers(result.members);
-    setUnavailable(result.unavailable);
-    setLoading(false);
-  };
-
+  useEffect(() => setRows(members), [members]);
   useEffect(() => {
-    load();
-  }, []);
+    if (!roleNames.includes(role)) setRole(roleNames[0]);
+  }, [roleNames, role]);
 
   const invite = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    setBusy(true);
+    setInviting(true);
     try {
       const res = await fetch('/api/admin/members', {
         method: 'POST',
@@ -53,17 +46,18 @@ export function AdminMembers() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'Could not invite member');
       setEmail('');
-      setRole('member');
-      await load();
+      onChange();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not invite member');
     } finally {
-      setBusy(false);
+      setInviting(false);
     }
   };
 
-  const changeRole = async (memberEmail: string, newRole: Role) => {
+  const changeRole = async (memberEmail: string, newRole: string) => {
     setError('');
+    const previous = rows;
+    setRows((curr) => curr.map((m) => (m.email === memberEmail ? { ...m, role: newRole } : m)));
     try {
       const res = await fetch('/api/admin/members', {
         method: 'POST',
@@ -72,38 +66,29 @@ export function AdminMembers() {
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'Could not change role');
-      await load();
+      onChange();
     } catch (err) {
+      setRows(previous);
       setError(err instanceof Error ? err.message : 'Could not change role');
     }
   };
 
   const remove = async (memberEmail: string) => {
     setError('');
+    setRemoving(memberEmail);
     try {
       const res = await fetch(`/api/admin/members/${encodeURIComponent(memberEmail)}`, {
         method: 'DELETE',
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'Could not remove member');
-      await load();
+      onChange();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not remove member');
+    } finally {
+      setRemoving(null);
     }
   };
-
-  if (loading) {
-    return <p className="px-1 text-sm text-muted">Loading members…</p>;
-  }
-
-  if (unavailable) {
-    return (
-      <EmptyState
-        title="Auth service unavailable"
-        description="Member management needs the auth service running. Start it locally, or check AUTH_SERVICE_URL — nothing here is broken."
-      />
-    );
-  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -124,14 +109,17 @@ export function AdminMembers() {
             <label className="mb-1 block text-xs text-muted">Role</label>
             <select
               value={role}
-              onChange={(e) => setRole(e.target.value as Role)}
+              onChange={(e) => setRole(e.target.value)}
               className="rounded border border-border bg-background px-3 py-2 text-sm text-foreground transition-colors focus:outline focus:outline-1 focus:outline-white"
             >
-              <option value="member">member</option>
-              <option value="owner">owner</option>
+              {roleNames.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
             </select>
           </div>
-          <Button type="submit" loading={busy}>
+          <Button type="submit" loading={inviting}>
             Invite
           </Button>
         </form>
@@ -149,14 +137,14 @@ export function AdminMembers() {
             </tr>
           </thead>
           <tbody>
-            {(members ?? []).length === 0 ? (
+            {rows.length === 0 ? (
               <tr>
                 <td colSpan={4} className="px-6 py-10 text-center text-muted">
                   No members yet — invite one above.
                 </td>
               </tr>
             ) : (
-              (members ?? []).map((member) => (
+              rows.map((member) => (
                 <tr
                   key={member.email}
                   className="border-b border-border transition-colors last:border-0 hover:bg-panel2/60"
@@ -165,16 +153,27 @@ export function AdminMembers() {
                   <td className="px-6 py-3">
                     <select
                       value={member.role}
-                      onChange={(e) => changeRole(member.email, e.target.value as Role)}
-                      className="rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground transition-colors focus:outline focus:outline-1 focus:outline-white"
+                      onChange={(e) => changeRole(member.email, e.target.value)}
+                      disabled={removing === member.email}
+                      className="rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground transition-colors focus:outline focus:outline-1 focus:outline-white disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      <option value="member">member</option>
-                      <option value="owner">owner</option>
+                      {(roleNames.includes(member.role) ? roleNames : [member.role, ...roleNames]).map(
+                        (name) => (
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
+                        ),
+                      )}
                     </select>
                   </td>
                   <td className="px-6 py-3 capitalize text-muted">{member.status}</td>
                   <td className="px-6 py-3 text-right">
-                    <Button variant="danger" size="sm" onClick={() => remove(member.email)}>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      loading={removing === member.email}
+                      onClick={() => remove(member.email)}
+                    >
                       Remove
                     </Button>
                   </td>

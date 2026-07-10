@@ -12,10 +12,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const nav = NAV_ITEMS.filter((item) => !item.module || viperConfig.modules.includes(item.module)).map(
     ({ href, label }) => ({ href, label }),
   );
-  // Admin (member management) always ships — see viper.modules.json's "auth" module — but the
+  // Access (members + roles) always ships — see viper.modules.json's "auth" module — but the
   // link itself only shows to owners; the page re-checks with hasPermission('*') regardless.
   if (user?.role === 'owner') {
-    nav.push({ href: '/admin', label: 'Admin' });
+    nav.push({ href: '/admin', label: 'Access' });
   }
 
   return (

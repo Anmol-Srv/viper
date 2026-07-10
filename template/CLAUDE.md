@@ -13,9 +13,10 @@ These are hard constraints, not suggestions. Breaking them breaks auth for every
 1. **Never edit `middleware.ts`, `lib/auth.ts`, `app/api/auth/*`, or `app/api/admin/*`.** Auth and
    member management are platform-managed — the Viper portal and auth service own this contract.
    If something here seems wrong, work around it in your own code; don't patch it.
-2. **Member management lives at `/admin`.** Never build your own member CRUD elsewhere in the
-   app — it's owner-only, already wired to the auth service, and shipped with every project. Need
-   more than email/role/status? Extend the admin panel, don't duplicate it.
+2. **Access management (members + roles + permissions) lives at `/admin`** (nav label
+   **Access**). Never build your own member or role CRUD elsewhere in the app — it's owner-only,
+   already wired to the auth service, and shipped with every project. Need to gate something on
+   a new permission? Add the key to a role in the Roles tab, don't duplicate the CRUD.
 3. **Every data-returning API route or page MUST call `requireUser()`** (from `lib/auth.ts`) and
    scope its results to that user **server-side**. Never fetch all rows and filter in the
    component — query with the user's identity as a filter from the start.
@@ -36,13 +37,14 @@ These are hard constraints, not suggestions. Breaking them breaks auth for every
 app/
   (app)/            signed-in area — layout.tsx renders the sidebar nav from viper.json.modules
     page.tsx         dashboard home (example: requireUser() + stat cards)
-    admin/page.tsx   member management — owner-only, backed by app/api/admin/*; never touch
-                     either, see docs/permissions.md for how it uses hasPermission()
+    admin/page.tsx   Access manager (Members + Roles tabs) — owner-only, backed by
+                     app/api/admin/*; never touch either, see docs/permissions.md for how it
+                     uses hasPermission()
 <!-- IF:db -->
     data/page.tsx    example: rows scoped to the signed-in user via lib/db.ts
 <!-- /IF:db -->
   api/auth/          login/OTP/logout routes — platform-managed, do not touch
-  api/admin/         member list/invite/remove routes — calls the auth service, do not touch
+  api/admin/         member + role CRUD routes — calls the auth service, do not touch
   login/             the login page — platform-managed, do not touch
 lib/
   auth.ts            getUser() / requireUser() / hasPermission() — do not touch

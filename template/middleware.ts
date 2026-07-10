@@ -13,7 +13,9 @@ export function middleware(request: NextRequest) {
   const devBypass = process.env.AUTH_DEV_BYPASS === '1';
 
   if (!hasSession && !devBypass) {
-    return NextResponse.redirect(new URL('/login', request.url));
+    const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('next', pathname + request.nextUrl.search);
+    return NextResponse.redirect(loginUrl);
   }
 
   return NextResponse.next();

@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import GettingStarted, { CopyButton } from "@/components/getting-started";
+import { apiFetch } from "@/lib/api";
 
 type Member = { email: string; role: string };
 type Deploy = { tag: string; at: string };
@@ -108,17 +109,35 @@ export default function ProjectDetailClient({ project, myRole, liveUrl }: { proj
 // v1.3 B2: reads/writes live via the auth service (SPEC §0.1) — no more portal-side member
 // array, so this fetches on mount and after every mutation instead of taking `project.members`
 // as a prop (that field now only ever has the owner, a lazy-read fallback for old records).
+// Falls back to the hardcoded owner/member pair until the auth service's roles CRUD ships +
+// restarts (SPEC-v1.3 §0.1 follow-up) — /api/projects/:subdomain/roles already degrades the
+// same way server-side, this is just the pre-load default so the picker never renders empty.
+const FALLBACK_ROLE_NAMES = ["owner", "member"];
+
 function MembersPanel({ project }: { project: Project }) {
   const [members, setMembers] = useState<{ email: string; role: string; status: string }[] | null>(null);
+  const [roleNames, setRoleNames] = useState<string[]>(FALLBACK_ROLE_NAMES);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("member");
   const [busy, setBusy] = useState(false);
+  const [roleBusy, setRoleBusy] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
   const [error, setError] = useState("");
+
+  const loadRoles = async () => {
+    try {
+      const res = await apiFetch(`/api/projects/${project.subdomain}/roles`);
+      const data = await res.json();
+      if (res.ok && data.roles?.length) setRoleNames(data.roles.map((r: { name: string }) => r.name));
+    } catch {
+      // keep FALLBACK_ROLE_NAMES
+    }
+  };
 
   const load = async () => {
     setError("");
     try {
-      const res = await fetch(`/api/projects/${project.subdomain}/members`);
+      const res = await apiFetch(`/api/projects/${project.subdomain}/members`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "could not load members");
       setMembers(data.members || []);
@@ -128,6 +147,7 @@ function MembersPanel({ project }: { project: Project }) {
   };
   useEffect(() => {
     load();
+    loadRoles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -135,7 +155,7 @@ function MembersPanel({ project }: { project: Project }) {
     setBusy(true);
     setError("");
     try {
-      const res = await fetch(`/api/projects/${project.subdomain}/members`, {
+      const res = await apiFetch(`/api/projects/${project.subdomain}/members`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email, role }),
@@ -151,10 +171,30 @@ function MembersPanel({ project }: { project: Project }) {
     }
   };
 
-  const remove = async (memberEmail: string) => {
+  const changeRole = async (memberEmail: string, newRole: string) => {
+    setRoleBusy(memberEmail);
     setError("");
     try {
-      const res = await fetch(`/api/projects/${project.subdomain}/members`, {
+      const res = await apiFetch(`/api/projects/${project.subdomain}/members`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: memberEmail, role: newRole }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || "could not change role");
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setRoleBusy(null);
+    }
+  };
+
+  const remove = async (memberEmail: string) => {
+    setRemoving(memberEmail);
+    setError("");
+    try {
+      const res = await apiFetch(`/api/projects/${project.subdomain}/members`, {
         method: "DELETE",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email: memberEmail }),
@@ -164,6 +204,8 @@ function MembersPanel({ project }: { project: Project }) {
       await load();
     } catch (e: any) {
       setError(e.message);
+    } finally {
+      setRemoving(null);
     }
   };
 
@@ -175,9 +217,19 @@ function MembersPanel({ project }: { project: Project }) {
         <div className="member-row" key={m.email}>
           <span>{m.email}</span>
           <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span className="role-badge">{m.role}</span>
-            <button className="link-btn" onClick={() => remove(m.email)}>
-              remove
+            <select
+              value={m.role}
+              disabled={roleBusy === m.email}
+              onChange={(e) => changeRole(m.email, e.target.value)}
+            >
+              {roleNames.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+            <button className="link-btn" disabled={removing === m.email} onClick={() => remove(m.email)}>
+              {removing === m.email ? "removing…" : "remove"}
             </button>
           </span>
         </div>
@@ -187,8 +239,11 @@ function MembersPanel({ project }: { project: Project }) {
       <input type="email" value={email} placeholder="teammate@airtribe.live" onChange={(e) => setEmail(e.target.value)} />
       <label>Role</label>
       <select value={role} onChange={(e) => setRole(e.target.value)}>
-        <option value="member">member</option>
-        <option value="owner">owner</option>
+        {roleNames.map((r) => (
+          <option key={r} value={r}>
+            {r}
+          </option>
+        ))}
       </select>
       {error && <div className="err">{error}</div>}
       <button className="primary" disabled={!email.trim() || busy} onClick={invite} style={{ marginTop: 14 }}>
@@ -301,7 +356,7 @@ function DangerZone({ project }: { project: Project }) {
     setBusy(true);
     setError("");
     try {
-      const res = await fetch(`/api/projects/${project.subdomain}`, {
+      const res = await apiFetch(`/api/projects/${project.subdomain}`, {
         method: "DELETE",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ confirm }),

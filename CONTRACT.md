@@ -16,6 +16,7 @@ Store = single SQLite file `auth.db` (better-sqlite3). Sessions/OTP are signed J
    → `{ projectId, clientId, clientSecret }`  (seeds roles `owner`,`member`; owner membership; default perms: owner=`["*"]`, member=`["read"]`)
 - `POST /projects/:id/members` (Bearer clientSecret OR `x-viper-admin`) body `{ email, role }` → `{ ok:true }` (upsert — also the role-change path)
 - `GET /projects/:id/members` / `DELETE /projects/:id/members/:email` — v1.3 additions, see "§0.1 Auth-service member endpoints" further down for the full contract (401/404 rules, last-owner guard).
+- **Added v1.4:** `GET /projects/:id/roles` → `{ roles: [{ name, permissions: [] }] }` · `POST /projects/:id/roles` (create) · `PUT /projects/:id/roles/:name` / `DELETE /projects/:id/roles/:name` — same auth as members (Bearer clientSecret OR `x-viper-admin`). Portal's Members tab role picker consumes `GET` server-side (`x-viper-admin`) via `apps/portal/app/api/projects/[subdomain]/roles/route.ts`, degrading to the hardcoded `owner`/`member` pair on any non-2xx (e.g. before the auth service restarts with these routes).
 - `POST /session/start` body `{ projectId, email }`
    → validates `@airtribe.live` + membership; "sends" OTP (dev: console.log + returns `{ ok:true, devOtp }` when NODE_ENV!=production)
 - `POST /session/verify` body `{ projectId, email, otp }` → `{ token }`  (JWT, 12h)

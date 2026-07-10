@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import GettingStarted from "@/components/getting-started";
+import { apiFetch } from "@/lib/api";
 
 const MODULES = [
   { key: "auth", label: "Auth (company SSO)", desc: "Email-OTP login locked to @airtribe.live. Always on.", forced: true },
@@ -47,7 +48,7 @@ export default function Home() {
     setBusy(true);
     setResult(null);
     try {
-      const r = await fetch("/api/projects", {
+      const r = await apiFetch("/api/projects", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ name, subdomain: subdomain || slugify(name), modules: selected }),

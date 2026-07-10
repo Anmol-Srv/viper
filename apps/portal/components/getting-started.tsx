@@ -67,6 +67,16 @@ export default function GettingStarted({ name, subdomain, liveUrl }: { name: str
         <div className="gs-num">4</div>
         <div>
           <p>
+            Your app ships with a built-in <strong>Access manager</strong> at <code>/admin</code> — invite
+            teammates, assign roles, and manage permissions. You never have to build member CRUD yourself.
+          </p>
+        </div>
+      </div>
+
+      <div className="gs-step">
+        <div className="gs-num">5</div>
+        <div>
+          <p>
             When you're ready: <code>npm run deploy</code> — your app goes live at{" "}
             <a href={liveUrl} target="_blank" rel="noreferrer">
               {liveUrl}

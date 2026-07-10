@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/api";
 
 type PlatformMember = { email: string; role: string; status: string };
 
@@ -14,7 +15,7 @@ export default function AdminClient({ me }: { me: { email: string; role: string 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/members");
+      const res = await apiFetch("/api/admin/members");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "could not load members");
       setMembers(data.members || []);
@@ -33,7 +34,7 @@ export default function AdminClient({ me }: { me: { email: string; role: string 
     setBusy(true);
     setError("");
     try {
-      const res = await fetch("/api/admin/members", {
+      const res = await apiFetch("/api/admin/members", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email, role }),
@@ -52,7 +53,7 @@ export default function AdminClient({ me }: { me: { email: string; role: string 
   const changeRole = async (memberEmail: string, newRole: string) => {
     setError("");
     try {
-      const res = await fetch("/api/admin/members", {
+      const res = await apiFetch("/api/admin/members", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email: memberEmail, role: newRole }),
@@ -68,7 +69,7 @@ export default function AdminClient({ me }: { me: { email: string; role: string 
   const remove = async (memberEmail: string) => {
     setError("");
     try {
-      const res = await fetch(`/api/admin/members/${encodeURIComponent(memberEmail)}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/admin/members/${encodeURIComponent(memberEmail)}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "could not remove member");
       await load();

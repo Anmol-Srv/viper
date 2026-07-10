@@ -102,6 +102,10 @@ button.danger-btn:disabled { opacity: 0.5; cursor: default; }
 
 button.link-btn { background: none; border: 0; color: var(--muted); font-size: 12px; cursor: pointer; padding: 0; text-decoration: underline; }
 button.link-btn:hover { color: var(--danger); }
+button.link-btn:disabled { opacity: 0.5; cursor: default; text-decoration: none; }
+/* Non-destructive text actions (e.g. login's "resend" / "use a different email") reuse link-btn's
+   sizing but shouldn't flash danger-red on hover like a remove/revoke action does. */
+button.link-btn.neutral:hover:not(:disabled) { color: var(--text); }
 
 /* Success state: a calm top accent line + check mark, not a loud full-box border (SPEC:
    status colors are for status, not decoration). Lives inside the card's own column. */

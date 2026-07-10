@@ -12,9 +12,10 @@ const fs = require('fs');
 process.env.AUTH_DB = path.join(os.tmpdir(), `viper-auth-smoke-${process.pid}.db`);
 process.env.AUTH_JWT_SECRET = 'test-secret';
 process.env.AUTH_ADMIN_KEY = 'test-admin-key';
+process.env.MAIL_FROM = 'viper-test@airtribe.live';
 delete process.env.NODE_ENV; // ensure devOtp is returned
 
-const { app, db } = require('./server.js');
+const { app, db, otpEmailSubject, otpEmailFrom, otpEmailBody } = require('./server.js');
 
 const post = async (url, body, headers = {}) => {
   const res = await app.inject({ method: 'POST', url, payload: body, headers: { 'content-type': 'application/json', ...headers } });
@@ -26,6 +27,10 @@ const del = async (url, headers = {}) => {
 };
 const get = async (url, headers = {}) => {
   const res = await app.inject({ method: 'GET', url, headers });
+  return { status: res.statusCode, body: res.json() };
+};
+const put = async (url, body, headers = {}) => {
+  const res = await app.inject({ method: 'PUT', url, payload: body, headers: { 'content-type': 'application/json', ...headers } });
   return { status: res.statusCode, body: res.json() };
 };
 
@@ -149,6 +154,99 @@ const get = async (url, headers = {}) => {
   r = await get(`/projects/${projectId}/members`, { 'x-viper-admin': process.env.AUTH_ADMIN_KEY });
   assert.ok(r.body.members.some((m) => m.email === email), 'last owner still present after refused delete');
 
+  // --- Roles CRUD (GET/POST/PUT/DELETE /projects/:id/roles) ---
+  r = await get(`/projects/${projectId}/roles`);
+  assert.equal(r.status, 401, 'GET roles without auth rejected');
+
+  r = await get(`/projects/${projectId}/roles`, { 'x-viper-admin': 'wrong-key' });
+  assert.equal(r.status, 401, 'GET roles with wrong admin key rejected');
+
+  r = await get('/projects/prj_doesnotexist/roles', { 'x-viper-admin': process.env.AUTH_ADMIN_KEY });
+  assert.equal(r.status, 404, 'GET roles on unknown project 404s');
+
+  r = await get(`/projects/${projectId}/roles`, { 'x-viper-admin': process.env.AUTH_ADMIN_KEY });
+  assert.equal(r.status, 200, 'GET roles via x-viper-admin ok');
+  assert.ok(
+    r.body.roles.some((x) => x.name === 'owner' && x.permissions.includes('*')) &&
+      r.body.roles.some((x) => x.name === 'member' && x.permissions.includes('read')),
+    'GET roles lists seeded owner/member with their perms — owner -> * untouched'
+  );
+
+  r = await get(`/projects/${projectId}/roles`, { authorization: 'Bearer ' + newSecret });
+  assert.equal(r.status, 200, 'GET roles via Bearer clientSecret ok');
+
+  r = await post(`/projects/${projectId}/roles`, { name: 'Bad Name' }, { 'x-viper-admin': process.env.AUTH_ADMIN_KEY });
+  assert.equal(r.status, 400, 'role name with spaces/uppercase rejected');
+
+  r = await post(`/projects/${projectId}/roles`, { name: 'owner' }, { 'x-viper-admin': process.env.AUTH_ADMIN_KEY });
+  assert.equal(r.status, 409, 'creating an already-existing role rejected');
+
+  r = await post(`/projects/${projectId}/roles`, { name: 'badperm', permissions: 'not-an-array' }, { 'x-viper-admin': process.env.AUTH_ADMIN_KEY });
+  assert.equal(r.status, 400, 'non-array permissions rejected');
+
+  r = await post(
+    `/projects/${projectId}/roles`,
+    { name: 'editor', permissions: [' write ', 'write', 'publish'] },
+    { authorization: 'Bearer ' + newSecret }
+  );
+  assert.equal(r.status, 200, 'create role via Bearer clientSecret ok');
+
+  r = await post(`/projects/${projectId}/roles`, { name: 'editor' }, { 'x-viper-admin': process.env.AUTH_ADMIN_KEY });
+  assert.equal(r.status, 409, 'creating a duplicate custom role rejected');
+
+  r = await get(`/projects/${projectId}/roles`, { 'x-viper-admin': process.env.AUTH_ADMIN_KEY });
+  let editorRole = r.body.roles.find((x) => x.name === 'editor');
+  assert.ok(editorRole, 'new role shows up in GET roles');
+  assert.deepEqual(editorRole.permissions, ['write', 'publish'], 'permissions trimmed + deduped on create');
+
+  r = await put(`/projects/${projectId}/roles/doesnotexist`, { permissions: [] }, { 'x-viper-admin': process.env.AUTH_ADMIN_KEY });
+  assert.equal(r.status, 404, 'PUT unknown role 404s');
+
+  r = await put(`/projects/${projectId}/roles/editor`, { permissions: ['publish', 'delete'] }, { 'x-viper-admin': process.env.AUTH_ADMIN_KEY });
+  assert.equal(r.status, 200, 'PUT role permissions ok');
+
+  r = await get(`/projects/${projectId}/roles`, { 'x-viper-admin': process.env.AUTH_ADMIN_KEY });
+  editorRole = r.body.roles.find((x) => x.name === 'editor');
+  assert.deepEqual(editorRole.permissions, ['publish', 'delete'], 'PUT replaces the permission set wholesale, not merge');
+
+  r = await del(`/projects/${projectId}/roles/owner`, { 'x-viper-admin': process.env.AUTH_ADMIN_KEY });
+  assert.equal(r.status, 400, 'deleting a seed role (owner) refused');
+
+  r = await del(`/projects/${projectId}/roles/member`, { 'x-viper-admin': process.env.AUTH_ADMIN_KEY });
+  assert.equal(r.status, 400, 'deleting a seed role (member) refused');
+
+  r = await del(`/projects/${projectId}/roles/doesnotexist`, { 'x-viper-admin': process.env.AUTH_ADMIN_KEY });
+  assert.equal(r.status, 404, 'deleting an unknown role 404s');
+
+  r = await del(`/projects/${projectId}/roles/editor`);
+  assert.equal(r.status, 401, 'DELETE role without auth rejected');
+
+  // assign 'editor' to a member — deleting the role while in use must be refused
+  r = await post(
+    `/projects/${projectId}/members`,
+    { email: 'editor-user@airtribe.live', role: 'editor' },
+    { 'x-viper-admin': process.env.AUTH_ADMIN_KEY }
+  );
+  assert.equal(r.status, 200, 'assign editor role to a member ok');
+
+  r = await del(`/projects/${projectId}/roles/editor`, { 'x-viper-admin': process.env.AUTH_ADMIN_KEY });
+  assert.equal(r.status, 400, 'deleting a role currently assigned to a member refused');
+
+  r = await post(
+    `/projects/${projectId}/members`,
+    { email: 'editor-user@airtribe.live', role: 'member' },
+    { 'x-viper-admin': process.env.AUTH_ADMIN_KEY }
+  );
+  assert.equal(r.status, 200, 'reassign member off the editor role');
+
+  r = await del(`/projects/${projectId}/roles/editor`, { authorization: 'Bearer ' + newSecret });
+  assert.equal(r.status, 200, 'delete role via Bearer clientSecret ok once unassigned');
+
+  r = await get(`/projects/${projectId}/roles`, { 'x-viper-admin': process.env.AUTH_ADMIN_KEY });
+  assert.ok(!r.body.roles.some((x) => x.name === 'editor'), 'deleted role gone from GET roles');
+
+  await del(`/projects/${projectId}/members/${encodeURIComponent('editor-user@airtribe.live')}`, { 'x-viper-admin': process.env.AUTH_ADMIN_KEY });
+
   // --- invite-only prj_viper (SPEC v1.3 A2): open_enrollment=0, special platform-admin message ---
   const newcomer = 'never-invited@airtribe.live';
   assert.ok(!db.prepare('SELECT 1 FROM members WHERE project_id=? AND email=?').get('prj_viper', newcomer), 'newcomer not a member yet');
@@ -198,6 +296,28 @@ const get = async (url, headers = {}) => {
   assert.ok(!db.prepare('SELECT 1 FROM projects WHERE id=?').get(projectId), 'project row gone');
   assert.ok(!db.prepare('SELECT 1 FROM members WHERE project_id=?').get(projectId), 'member rows gone');
   assert.ok(!db.prepare('SELECT 1 FROM roles WHERE project_id=?').get(projectId), 'role rows gone');
+
+  // --- OTP email subject/from/body construction (unit-ish, exported straight from server.js) ---
+  assert.equal(otpEmailSubject('Acme Corp', '123456'), '[Acme Corp] Your sign-in code: 123456', 'subject format');
+  assert.equal(otpEmailSubject('', '123456'), '[Viper] Your sign-in code: 123456', 'subject falls back to [Viper] for empty name');
+  assert.equal(otpEmailSubject(null, '123456'), '[Viper] Your sign-in code: 123456', 'subject falls back to [Viper] for missing name');
+
+  assert.deepEqual(otpEmailFrom('Acme Corp'), { name: 'Acme Corp (Viper)', address: process.env.MAIL_FROM }, 'from display name');
+  assert.deepEqual(otpEmailFrom(''), { name: 'Viper (Viper)', address: process.env.MAIL_FROM }, 'from falls back to Viper (Viper) for empty name');
+
+  const emailBody = otpEmailBody('Acme Corp', '123456');
+  assert.ok(emailBody.includes('Acme Corp'), 'body mentions the project name in the first line');
+  assert.ok(
+    emailBody.split('\n').includes('123456'),
+    'body has the code on its own line'
+  );
+  assert.ok(emailBody.includes('10 minutes'), 'body states the 10-minute expiry');
+  assert.ok(
+    emailBody.includes("Requested from Acme Corp — if this wasn't you, ignore this email."),
+    'body has the requested-from disclaimer with the project name'
+  );
+  assert.ok(emailBody.trim().endsWith('— Viper'), 'body signs off as Viper');
+  assert.ok(otpEmailBody('', '123456').includes('Viper'), 'body falls back to Viper for an empty project name');
 
   console.log('✅ auth smoke passed');
   try { fs.unlinkSync(process.env.AUTH_DB); } catch {}
