@@ -1,0 +1,5 @@
+{
+  "auth": { "label": "Auth (company SSO)", "forced": true, "files": ["middleware.ts","lib/auth.ts","app/login","app/api/auth"], "guide": "docs/auth.md" },
+  "permissions": { "label": "Permissions (RBAC)", "forced": false, "files": ["lib/permissions.ts","app/(app)/team"], "guide": "docs/permissions.md" },
+  "db": { "label": "Database (Insforge)", "forced": false, "files": ["lib/db.ts","app/(app)/data"], "guide": "docs/db.md" }
+}

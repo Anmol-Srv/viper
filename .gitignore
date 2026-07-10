@@ -1,0 +1,9 @@
+node_modules/
+.next/
+.env
+.env.local
+*.db
+*.db-wal
+*.db-shm
+apps/portal/data/
+apps/portal/output/

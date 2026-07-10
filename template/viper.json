@@ -1,0 +1,8 @@
+{
+  "projectId": "prj_dev",
+  "name": "Dev Project",
+  "subdomain": "dev",
+  "modules": ["auth", "permissions", "db"],
+  "authServiceUrl": "http://localhost:4000",
+  "viperUrl": "http://localhost:3300"
+}
