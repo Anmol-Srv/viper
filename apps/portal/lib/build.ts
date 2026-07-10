@@ -4,6 +4,8 @@ import { spawn } from "child_process";
 
 const DOCKER_CONTEXT = process.env.DOCKER_CONTEXT || "colima-coolify";
 const REGISTRY = process.env.REGISTRY || "localhost:5000";
+// docker+traefik mode runs the locally-built image directly — no registry to push to.
+const SKIP_PUSH = process.env.SKIP_REGISTRY_PUSH === "1";
 
 function run(args: string[], onLine: (line: string) => void): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -48,6 +50,6 @@ export async function buildAndPush(opts: {
 }): Promise<{ image: string; tag: string }> {
   const image = `${REGISTRY}/viper-${opts.subdomain}`;
   await run(["--context", DOCKER_CONTEXT, "build", "-t", `${image}:${opts.tag}`, opts.srcDir], opts.onLine);
-  await run(["--context", DOCKER_CONTEXT, "push", `${image}:${opts.tag}`], opts.onLine);
+  if (!SKIP_PUSH) await run(["--context", DOCKER_CONTEXT, "push", `${image}:${opts.tag}`], opts.onLine);
   return { image, tag: opts.tag };
 }

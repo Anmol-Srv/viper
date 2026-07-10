@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as store from "@/lib/store";
 import * as coolify from "@/lib/coolify";
 import { buildAndPush } from "@/lib/build";
+import { runApp } from "@/lib/localrunner";
 
 const sha = (s: string) => crypto.createHash("sha256").update(s).digest("hex");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -87,6 +88,51 @@ export async function POST(req: NextRequest) {
   if (!fs.existsSync(path.join(stagingDir, "Dockerfile"))) {
     fs.rmSync(stagingDir, { recursive: true, force: true });
     return NextResponse.json({ error: "Dockerfile not found in uploaded project" }, { status: 400 });
+  }
+
+  // docker+traefik mode (DEPLOY_MODE=docker): build the image locally and run it as a labeled
+  // container behind Traefik — no Coolify, no registry. Used on shared hosts (SPEC v1.3 note).
+  if ((process.env.DEPLOY_MODE || "coolify") === "docker") {
+    const stream = new ReadableStream({
+      async start(controller) {
+        const enc = new TextEncoder();
+        const emit = (o: Record<string, unknown>) => controller.enqueue(enc.encode(JSON.stringify(o) + "\n"));
+        try {
+          emit({ status: "extracted & scrubbed .env.local" });
+          const tag = String(Date.now());
+          const { image } = await buildAndPush({ srcDir: stagingDir, subdomain: rec.subdomain, tag, onLine: (l) => emit({ status: l }) });
+          emit({ status: `built ${image}:${tag}` });
+          emit({ status: "starting container…" });
+          const { url } = await runApp({
+            image,
+            tag,
+            subdomain: rec.subdomain,
+            onLine: (l) => emit({ status: l }),
+            env: {
+              AUTH_SERVICE_URL: AUTH_URL_FROM_VM,
+              PROJECT_ID: rec.projectId,
+              AUTH_CLIENT_ID: rec.clientId,
+              AUTH_CLIENT_SECRET: rec.clientSecret,
+              VIPER_URL: VIPER_URL_FROM_VM,
+              NODE_ENV: "production",
+              HOSTNAME: "0.0.0.0",
+              PORT: "3000",
+              COOKIE_SECURE: (process.env.VIPER_DOMAIN_SCHEME || "http") === "https" ? "1" : "0",
+              ...(rec.db?.internalUrl ? { DATABASE_URL: rec.db.internalUrl } : {}),
+            },
+          });
+          store.update(rec.projectId, { coolify: { configured: true, url } });
+          store.addDeploy(rec.projectId, tag);
+          emit({ ok: true, url, tag });
+        } catch (e: any) {
+          emit({ ok: false, error: e?.message || String(e), hint: HINTS.build });
+        } finally {
+          fs.rmSync(stagingDir, { recursive: true, force: true });
+          controller.close();
+        }
+      },
+    });
+    return new Response(stream, { headers: { "Content-Type": "application/x-ndjson" } });
   }
 
   // Degrade gracefully when Coolify isn't wired yet — same shape as before this rewrite.
