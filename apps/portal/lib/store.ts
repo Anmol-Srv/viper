@@ -8,7 +8,7 @@ export type Deploy = { tag: string; at: string };
 // Provider-agnostic (SPEC §0.3, revised mid-build — Coolify-hosted Postgres is out, a
 // third-party provider is in, API TBD). Credentials here are plaintext on disk, same laptop-v1
 // tradeoff as clientSecret — shown to the project owner in the Database tab by design.
-export type Db = { provider: "insforge"; ref: string; localUrl?: string; internalUrl?: string; dashboardUrl?: string };
+export type Db = { provider: "insforge"; ref: string; url?: string; apiKey?: string; localUrl?: string; internalUrl?: string; dashboardUrl?: string };
 
 export type ProjectRecord = {
   projectId: string;
