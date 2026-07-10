@@ -1,0 +1,51 @@
+# Viper core services on the staging server (native Linux docker, host networking).
+# Host networking = auth:4000, portal:3400, Coolify:8000, registry:5000 all on localhost —
+# no container-to-host puzzles. Runs from the repo root: docker compose -f infra/staging-compose.yml up -d
+services:
+  viper-auth:
+    build: ../services/auth
+    network_mode: host # serves :4000
+    restart: unless-stopped
+    environment:
+      PORT: "4000"
+      AUTH_DB: /data/auth.db
+      NODE_ENV: production # fail-loud if no mail transport — set SMTP_URL below
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET}
+      AUTH_ADMIN_KEY: ${AUTH_ADMIN_KEY}
+      AUTH_PLATFORM_ADMIN: ${AUTH_PLATFORM_ADMIN:-enggv2@airtribe.live}
+      SMTP_URL: ${SMTP_URL}
+      MAIL_FROM: ${MAIL_FROM}
+    volumes:
+      - viper-auth-data:/data
+
+  viper-portal:
+    build: ../apps/portal
+    network_mode: host # serves :3400
+    restart: unless-stopped
+    depends_on:
+      - viper-auth
+    environment:
+      AUTH_SERVICE_URL: http://localhost:4000
+      VIPER_URL: http://${SERVER_IP}:3400
+      VIPER_TEMPLATE_DIR: /repo/template
+      VIPER_BASE_DOMAIN: ${SERVER_IP}.sslip.io
+      VIPER_DOMAIN_SCHEME: http
+      VIPER_AUTH_URL_FROM_VM: http://${SERVER_IP}:4000 # deployed project containers → auth
+      AUTH_ADMIN_KEY: ${AUTH_ADMIN_KEY}
+      DOCKER_CONTEXT: default
+      COOLIFY_URL: http://localhost:8000
+      COOLIFY_TOKEN: ${COOLIFY_TOKEN}
+      COOLIFY_SERVER_UUID: ${COOLIFY_SERVER_UUID}
+      COOLIFY_PROJECT_UUID: ${COOLIFY_PROJECT_UUID}
+      INSFORGE_USER_API_KEY: ${INSFORGE_USER_API_KEY}
+      INSFORGE_ORG_ID: ${INSFORGE_ORG_ID}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock # portal builds project images
+      - ../:/repo:ro # template dir for zip-gen
+      - viper-portal-data:/app/data
+      - viper-portal-output:/app/output
+
+volumes:
+  viper-auth-data:
+  viper-portal-data:
+  viper-portal-output:
