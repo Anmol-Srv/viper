@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import GettingStarted, { CopyButton } from "@/components/getting-started";
+import ConfirmModal from "@/components/confirm-modal";
 import { apiFetch } from "@/lib/api";
 
 type Member = { email: string; role: string };
@@ -18,6 +19,7 @@ type Project = {
   deploys?: Deploy[];
   db?: Db;
   dbError?: string;
+  stopped?: boolean;
   createdAt: string;
 };
 
@@ -34,9 +36,36 @@ export default function ProjectDetailClient({ project, myRole, liveUrl }: { proj
     ...(isOwner ? [{ key: "members" as Tab, label: "Members" }, { key: "danger" as Tab, label: "Danger zone" }] : []),
   ];
   const [tab, setTab] = useState<Tab>("overview");
+  const [modal, setModal] = useState<"stop" | "start" | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
 
   const deploys = [...(project.deploys || [])].reverse();
   const isLive = Boolean(project.coolify?.url);
+  const stopped = Boolean(project.stopped);
+  const deployed = deploys.length > 0;
+  const statusLabel = stopped ? "stopped" : isLive ? "live" : "local";
+
+  const runAction = async (action: "stop" | "start") => {
+    setActionBusy(true);
+    setActionError("");
+    try {
+      const res = await apiFetch(`/api/projects/${project.subdomain}/${action}`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || `could not ${action} project`);
+      setModal(null);
+      router.refresh();
+    } catch (e: any) {
+      setActionError(e.message);
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const closeModal = () => {
+    setModal(null);
+    setActionError("");
+  };
 
   return (
     <div className="wrap">
@@ -50,8 +79,43 @@ export default function ProjectDetailClient({ project, myRole, liveUrl }: { proj
             <h1>{project.name}</h1>
           </div>
         </div>
-        <span className={`tag ${isLive ? "live" : ""}`}>{isLive ? "live" : "local"}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span className={`tag ${!stopped && isLive ? "live" : ""}`}>{statusLabel}</span>
+          {isOwner && deployed && !stopped && (
+            <button className="secondary" onClick={() => setModal("stop")}>
+              Stop project
+            </button>
+          )}
+          {isOwner && deployed && stopped && (
+            <button className="primary" style={{ marginTop: 0 }} onClick={() => setModal("start")}>
+              Start project
+            </button>
+          )}
+        </div>
       </div>
+
+      {modal === "stop" && (
+        <ConfirmModal
+          title={`Stop ${project.name}?`}
+          body="The app goes offline and its memory is reclaimed. Your code, data, and URL are kept — Start brings it back."
+          confirmLabel="Stop project"
+          busy={actionBusy}
+          error={actionError}
+          onConfirm={() => runAction("stop")}
+          onCancel={closeModal}
+        />
+      )}
+      {modal === "start" && (
+        <ConfirmModal
+          title={`Start ${project.name}?`}
+          body="Brings the app back online from its last deployed image. This may take a few seconds."
+          confirmLabel="Start project"
+          busy={actionBusy}
+          error={actionError}
+          onConfirm={() => runAction("start")}
+          onCancel={closeModal}
+        />
+      )}
 
       <div className="tabs">
         {tabs.map((t) => (
@@ -348,7 +412,7 @@ function DatabasePanel({ project }: { project: Project }) {
 
 function DangerZone({ project }: { project: Project }) {
   const router = useRouter();
-  const [confirm, setConfirm] = useState("");
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -359,7 +423,7 @@ function DangerZone({ project }: { project: Project }) {
       const res = await apiFetch(`/api/projects/${project.subdomain}`, {
         method: "DELETE",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ confirm }),
+        body: JSON.stringify({ confirm: project.subdomain }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "could not delete project");
@@ -376,12 +440,25 @@ function DangerZone({ project }: { project: Project }) {
       <p className="sub" style={{ margin: "0 0 12px" }}>
         Tears down the live app, removes it from the auth service, and deletes the local zip. This cannot be undone.
       </p>
-      <label>Type &ldquo;{project.subdomain}&rdquo; to confirm</label>
-      <input type="text" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-      {error && <div className="err">{error}</div>}
-      <button className="danger-btn" disabled={confirm !== project.subdomain || busy} onClick={del} style={{ marginTop: 14 }}>
-        {busy ? "Deleting…" : `Delete ${project.subdomain}`}
+      <button className="danger-btn" onClick={() => setOpen(true)}>
+        Delete {project.subdomain}
       </button>
+      {open && (
+        <ConfirmModal
+          title={`Delete ${project.subdomain}?`}
+          body="Tears down the live app, removes it from the auth service, and deletes the local zip. This cannot be undone."
+          confirmLabel={`Delete ${project.subdomain}`}
+          danger
+          requireText={project.subdomain}
+          busy={busy}
+          error={error}
+          onConfirm={del}
+          onCancel={() => {
+            setOpen(false);
+            setError("");
+          }}
+        />
+      )}
     </div>
   );
 }

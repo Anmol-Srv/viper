@@ -30,6 +30,7 @@ export type ProjectRecord = {
   deploys?: Deploy[]; // capped at DEPLOY_HISTORY_CAP, newest last
   db?: Db; // present only once a database provider is actually configured + provisioning succeeds
   dbError?: string; // set when the `db` module was selected but provisioning failed/degraded
+  stopped?: boolean; // project-level stop/start (resource reclaim) — undefined/false = running
   zipFile: string;
   createdAt: string;
 };

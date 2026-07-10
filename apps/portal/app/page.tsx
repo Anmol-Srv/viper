@@ -175,7 +175,9 @@ export default function Home() {
                     {p.lastDeployAt && <> · deployed {new Date(p.lastDeployAt).toLocaleString()}</>}
                   </div>
                 </div>
-                <span className={`tag ${p.coolify?.url ? "live" : ""}`}>{p.coolify?.url ? "live" : "local"}</span>
+                <span className={`tag ${!p.stopped && p.coolify?.url ? "live" : ""}`}>
+                  {p.stopped ? "stopped" : p.coolify?.url ? "live" : "local"}
+                </span>
               </a>
             ))}
           </div>

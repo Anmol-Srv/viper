@@ -89,6 +89,17 @@ export async function deleteApp(appUuid: string): Promise<void> {
   await api(`/api/v1/applications/${appUuid}`, "DELETE");
 }
 
+// Resource controls (project-level stop/start, portal SPEC follow-up): GET|POST both exist on
+// these endpoints per the live Coolify container — POST is the one that actually drives the app
+// lifecycle (GET is a dry-run/status style variant we don't need here).
+export async function stopApp(appUuid: string): Promise<void> {
+  await api(`/api/v1/applications/${appUuid}/stop`, "POST");
+}
+
+export async function startApp(appUuid: string): Promise<void> {
+  await api(`/api/v1/applications/${appUuid}/start`, "POST");
+}
+
 // Verified 2026-07-10 against the live Coolify container: GET /api/v1/applications/{uuid}/logs
 // → { logs: "<newline-joined string>" }. Returns the last `lines` non-empty lines.
 export async function getLogs(appUuid: string, lines = 30): Promise<string[]> {

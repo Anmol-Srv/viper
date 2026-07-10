@@ -11,13 +11,10 @@ import * as store from "@/lib/store";
 import * as coolify from "@/lib/coolify";
 import { buildAndPush } from "@/lib/build";
 import { runApp } from "@/lib/localrunner";
+import { buildAppEnv } from "@/lib/appenv";
 
 const sha = (s: string) => crypto.createHash("sha256").update(s).digest("hex");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-// VM-reachable Mac address (colima gateway) — deployed containers cannot reach "localhost".
-const AUTH_URL_FROM_VM = process.env.VIPER_AUTH_URL_FROM_VM || "http://192.168.5.2:4000";
-const VIPER_URL_FROM_VM = "http://192.168.5.2:3400";
 
 const TERMINAL = new Set(["finished", "failed", "cancelled-by-user"]);
 const POLL_MS = 3000;
@@ -108,21 +105,9 @@ export async function POST(req: NextRequest) {
             tag,
             subdomain: rec.subdomain,
             onLine: (l) => emit({ status: l }),
-            env: {
-              AUTH_SERVICE_URL: AUTH_URL_FROM_VM,
-              PROJECT_ID: rec.projectId,
-              AUTH_CLIENT_ID: rec.clientId,
-              AUTH_CLIENT_SECRET: rec.clientSecret,
-              VIPER_URL: VIPER_URL_FROM_VM,
-              NODE_ENV: "production",
-              HOSTNAME: "0.0.0.0",
-              PORT: "3000",
-              COOKIE_SECURE: (process.env.VIPER_DOMAIN_SCHEME || "http") === "https" ? "1" : "0",
-              ...(rec.db?.url && rec.db?.apiKey ? { INSFORGE_URL: rec.db.url, INSFORGE_API_KEY: rec.db.apiKey } : {}),
-              ...(rec.db?.internalUrl ? { DATABASE_URL: rec.db.internalUrl } : {}),
-            },
+            env: buildAppEnv(rec),
           });
-          store.update(rec.projectId, { coolify: { configured: true, url } });
+          store.update(rec.projectId, { coolify: { configured: true, url }, stopped: false });
           store.addDeploy(rec.projectId, tag);
           emit({ ok: true, url, tag });
         } catch (e: any) {
@@ -175,19 +160,7 @@ export async function POST(req: NextRequest) {
             subdomain: rec.subdomain,
             image,
             tag,
-            env: {
-              AUTH_SERVICE_URL: AUTH_URL_FROM_VM,
-              PROJECT_ID: rec.projectId,
-              AUTH_CLIENT_ID: rec.clientId,
-              AUTH_CLIENT_SECRET: rec.clientSecret,
-              VIPER_URL: VIPER_URL_FROM_VM,
-              NODE_ENV: "production",
-              // session cookie Secure flag follows the serving scheme (http on the laptop)
-              COOKIE_SECURE: (process.env.VIPER_DOMAIN_SCHEME || "http") === "https" ? "1" : "0",
-              // Never inject AUTH_DEV_BYPASS here — its absence is what turns the login wall on.
-              ...(rec.db?.url && rec.db?.apiKey ? { INSFORGE_URL: rec.db.url, INSFORGE_API_KEY: rec.db.apiKey } : {}),
-              ...(rec.db?.internalUrl ? { DATABASE_URL: rec.db.internalUrl } : {}),
-            },
+            env: buildAppEnv(rec),
           });
           appUuid = created.appUuid;
           url = created.url;
@@ -228,6 +201,7 @@ export async function POST(req: NextRequest) {
         }
 
         store.addDeploy(rec.projectId, tag);
+        store.update(rec.projectId, { stopped: false });
         emit({ ok: true, url, tag });
       } catch (e: any) {
         const message = e?.message || String(e);

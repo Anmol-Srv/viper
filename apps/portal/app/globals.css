@@ -178,3 +178,17 @@ button.link-btn.neutral:hover:not(:disabled) { color: var(--text); }
 .member-row:last-child { border-bottom: 0; }
 .member-row:hover { background: var(--panel-2); }
 .role-badge { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: var(--radius); padding: 2px 8px; text-transform: uppercase; letter-spacing: 0.02em; }
+
+/* Confirm modal (stop/start/delete project — SPEC §0.2 tokens: sharp panel, dim overlay) */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6);
+  display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px;
+}
+.modal-panel {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 22px; width: 400px; max-width: 100%;
+}
+.modal-title { font-size: 15px; font-weight: 600; margin: 0 0 10px; }
+.modal-title.danger { color: var(--danger); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.modal-actions button { margin-top: 0; }

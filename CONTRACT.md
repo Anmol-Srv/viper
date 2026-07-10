@@ -169,6 +169,30 @@ guarded, 400 on `prj_viper`) → removes the store record + the zip file. Coolif
 are logged and swallowed (best-effort) so a partially-torn-down project doesn't get stuck
 undeletable in the portal.
 
+**Resource controls — stop/start (project-level):** `POST /api/projects/:subdomain/stop` and
+`POST /api/projects/:subdomain/start`, no body. Auth: session required, caller must be
+`rec.ownerEmail === user.email` or the platform admin (`user.role === "owner"`) — same guard
+shape as teardown, 403 otherwise. Both 400 if the project has never been deployed (no
+`coolify.appUuid` and no `lastImageTag`). `DEPLOY_MODE=docker` → `lib/localrunner.ts`'s
+`stopApp(subdomain)` / `runApp(...)` (start reruns the last-pushed image+tag with the shared
+`lib/appenv.ts` env, same env shape as a fresh deploy); Coolify mode → `lib/coolify.ts`'s
+`stopApp(appUuid)` / `startApp(appUuid)` (`POST /api/v1/applications/{uuid}/stop|start`). On
+success, `ProjectRecord.stopped` flips to `true`/`false`; the deploy route also resets
+`stopped: false` on every successful deploy (a redeploy always brings a stopped project back).
+Start in docker mode surfaces a clear "image no longer on the server — redeploy with npm run
+deploy" error if the local image was pruned. `lib/appenv.ts`'s `buildAppEnv(rec)` is the single
+source for the deployed-app env (`AUTH_SERVICE_URL`/`PROJECT_ID`/`AUTH_CLIENT_ID`/
+`AUTH_CLIENT_SECRET`/`VIPER_URL`/`NODE_ENV`/`HOSTNAME`+`PORT` in docker mode only/
+`COOKIE_SECURE`/`INSFORGE_*`/`DATABASE_URL` conditionals) — `app/api/deploy/route.ts` and the
+start route both call it, replacing what used to be two inline copies.
+
+**Confirm modal:** `components/confirm-modal.tsx` — shared overlay+panel dialog (SPEC §0.2
+tokens) used for stop, start, and delete. `requireText` renders a type-to-confirm input that
+gates the confirm button; Escape or an overlay click cancels. The project detail page's
+Danger-zone delete now opens this modal (`danger`, `requireText` = the subdomain) instead of
+the old inline type-to-confirm field — the `DELETE /api/projects/:subdomain` contract above is
+unchanged.
+
 ## v1.3 additions (SPEC-v1.3.md — admin everywhere, real databases, grown-up UI)
 
 ### §0.1 Auth-service member endpoints (agent A implements; portal + template consume)
