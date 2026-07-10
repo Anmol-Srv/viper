@@ -12,6 +12,7 @@
   "dependencies": {
     "better-sqlite3": "^11.8.1",
     "fastify": "^4.29.0",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^9.0.3"
   }
 }

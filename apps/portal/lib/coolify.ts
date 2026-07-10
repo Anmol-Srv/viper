@@ -14,6 +14,9 @@ const SCHEME = process.env.VIPER_DOMAIN_SCHEME || "http";
 
 export const configured = () => Boolean(URL_ && TOKEN && SERVER_UUID && PROJECT_UUID);
 
+// Shared with zipgen (SPEC §3.4 CLAUDE.md injection) so the live-URL formula lives in one place.
+export const liveUrlFor = (subdomain: string) => `${SCHEME}://${subdomain}.${BASE_DOMAIN}`;
+
 async function api(pathname: string, method = "GET", body?: unknown) {
   const res = await fetch(`${URL_}${pathname}`, {
     method,
@@ -80,6 +83,18 @@ export async function createImageApp(opts: {
 
 export async function setImageTag(appUuid: string, tag: string): Promise<void> {
   await api(`/api/v1/applications/${appUuid}`, "PATCH", { docker_registry_image_tag: tag });
+}
+
+export async function deleteApp(appUuid: string): Promise<void> {
+  await api(`/api/v1/applications/${appUuid}`, "DELETE");
+}
+
+// Verified 2026-07-10 against the live Coolify container: GET /api/v1/applications/{uuid}/logs
+// → { logs: "<newline-joined string>" }. Returns the last `lines` non-empty lines.
+export async function getLogs(appUuid: string, lines = 30): Promise<string[]> {
+  const res = await api(`/api/v1/applications/${appUuid}/logs`);
+  const raw = typeof res?.logs === "string" ? res.logs : "";
+  return raw.split("\n").filter(Boolean).slice(-lines);
 }
 
 export type TriggerDeployResult = { deploymentUuid?: string; message?: string };

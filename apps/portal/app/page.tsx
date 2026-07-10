@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import GettingStarted from "@/components/getting-started";
 
 const MODULES = [
   { key: "auth", label: "Auth (company SSO)", desc: "Email-OTP login locked to @airtribe.live. Always on.", forced: true },
@@ -7,25 +9,33 @@ const MODULES = [
   { key: "db", label: "Database (Insforge)", desc: "A per-project datastore for your app's own data." },
 ];
 
-type Result = { ok?: boolean; subdomain?: string; downloadUrl?: string; error?: string };
+type Result = { ok?: boolean; subdomain?: string; name?: string; downloadUrl?: string; liveUrl?: string; error?: string };
 
 export default function Home() {
+  const router = useRouter();
   const [name, setName] = useState("");
   const [subdomain, setSubdomain] = useState("");
-  const [ownerEmail, setOwnerEmail] = useState("");
   const [selected, setSelected] = useState<string[]>(["permissions"]);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const [projects, setProjects] = useState<any[]>([]);
   const [coolifyConfigured, setCoolifyConfigured] = useState(false);
+  const [me, setMe] = useState<{ email: string; role: string } | null>(null);
 
   const load = async () => {
-    const r = await fetch("/api/projects").then((x) => x.json());
+    const res = await fetch("/api/projects");
+    if (res.status === 401) {
+      router.push("/login");
+      return;
+    }
+    const r = await res.json();
     setProjects(r.projects || []);
     setCoolifyConfigured(!!r.coolifyConfigured);
+    setMe(r.me || null);
   };
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/^-+|-+$/g, "");
@@ -40,7 +50,7 @@ export default function Home() {
       const r = await fetch("/api/projects", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, subdomain: subdomain || slugify(name), ownerEmail, modules: selected }),
+        body: JSON.stringify({ name, subdomain: subdomain || slugify(name), modules: selected }),
       }).then((x) => x.json());
       setResult(r);
       if (r.ok) {
@@ -55,17 +65,37 @@ export default function Home() {
     }
   };
 
-  const valid = name.trim() && ownerEmail.trim().endsWith("@airtribe.live");
+  const logout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+  };
+
+  const valid = name.trim().length > 0;
 
   return (
     <div className="wrap">
-      <div className="brand">
-        <div className="logo">V</div>
-        <h1>Viper</h1>
+      <div className="topbar">
+        <div className="brand" style={{ marginBottom: 0 }}>
+          <div className="logo">V</div>
+          <h1>Viper</h1>
+        </div>
+        {me && (
+          <div className="sub" style={{ margin: 0, display: "flex", alignItems: "center", gap: 10 }}>
+            {me.email}
+            {me.role === "owner" && (
+              <a className="secondary" href="/admin" style={{ textDecoration: "none" }}>
+                Admin
+              </a>
+            )}
+            <button className="secondary" onClick={logout}>
+              Log out
+            </button>
+          </div>
+        )}
       </div>
       <p className="sub">
         Create an internal project, pick your modules, get a ready-to-build zip with auth &amp; design wired in.
-        {coolifyConfigured ? " · infra: Coolify connected ✓" : " · infra: Coolify not connected yet"}
+        {coolifyConfigured ? " · infra: Coolify connected" : " · infra: Coolify not connected yet"}
       </p>
 
       <div className="grid">
@@ -83,8 +113,6 @@ export default function Home() {
           />
           <label>Subdomain</label>
           <input type="text" value={subdomain} placeholder="sales-cockpit" onChange={(e) => setSubdomain(slugify(e.target.value))} />
-          <label>Owner email (must be @airtribe.live)</label>
-          <input type="email" value={ownerEmail} placeholder="you@airtribe.live" onChange={(e) => setOwnerEmail(e.target.value)} />
 
           <label>Modules</label>
           <div className="mods">
@@ -110,18 +138,16 @@ export default function Home() {
             {busy ? "Creating…" : "Create project & generate zip"}
           </button>
 
-          {result?.error && <div className="err">✗ {result.error}</div>}
-          {result?.ok && (
+          {result?.error && <div className="err">{result.error}</div>}
+          {result?.ok && result.subdomain && (
             <div className="result">
-              <h3>✓ {result.subdomain} created</h3>
+              <h3>{result.subdomain} created</h3>
               <a className="dl" href={result.downloadUrl}>
-                ↓ Download {result.subdomain}.zip
+                Download {result.subdomain}.zip
               </a>
-              <ol className="steps">
-                <li>Unzip, then <code>npm install &amp;&amp; npm run dev</code> (runs with dev bypass, no login wall).</li>
-                <li>Build your dashboard. Read <code>docs/*.md</code> for each module.</li>
-                <li><code>npm run deploy</code> to ship it live — deploy activates on your first run.</li>
-              </ol>
+              <div style={{ marginTop: 16 }}>
+                <GettingStarted name={result.name || result.subdomain} subdomain={result.subdomain} liveUrl={result.liveUrl || ""} />
+              </div>
             </div>
           )}
         </div>
@@ -129,9 +155,9 @@ export default function Home() {
         <div className="card">
           <h2>Projects ({projects.length})</h2>
           <div className="plist">
-            {projects.length === 0 && <div className="empty">No projects yet. Create your first one →</div>}
+            {projects.length === 0 && <div className="empty">No projects yet. Create your first one.</div>}
             {projects.map((p) => (
-              <div className="prow" key={p.projectId}>
+              <a className="prow" key={p.projectId} href={`/projects/${p.subdomain}`} style={{ textDecoration: "none", color: "inherit" }}>
                 <div>
                   <div className="n">{p.name}</div>
                   <div className="m">
@@ -139,16 +165,14 @@ export default function Home() {
                     {p.coolify?.url && (
                       <>
                         {" · "}
-                        <a href={p.coolify.url} target="_blank" rel="noreferrer">
-                          {p.coolify.url}
-                        </a>
+                        <span>{p.coolify.url}</span>
                       </>
                     )}
                     {p.lastDeployAt && <> · deployed {new Date(p.lastDeployAt).toLocaleString()}</>}
                   </div>
                 </div>
                 <span className={`tag ${p.coolify?.url ? "live" : ""}`}>{p.coolify?.url ? "live" : "local"}</span>
-              </div>
+              </a>
             ))}
           </div>
         </div>

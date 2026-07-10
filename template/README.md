@@ -3,6 +3,10 @@
 A Next.js 15 (App Router) + TypeScript + Tailwind starter with auth, permissions, and a database
 client pre-wired. Fork it, build your internal dashboard on top.
 
+> **AI agent working here?** Read [`CLAUDE.md`](CLAUDE.md) (or `AGENTS.md`) first — it has The
+> Rules and a map of this scaffold. **Something broken?** Run `npm run doctor` first — see
+> [`docs/troubleshooting.md`](docs/troubleshooting.md).
+
 ## Quick start
 
 ```bash

@@ -7,7 +7,9 @@ Every user has a `role` (`owner` / `member`) and a `permissions` array (`owner` 
 
 - `lib/permissions.ts` — re-exports `hasPermission(perm)` from `lib/auth.ts`, plus
   `assertPermission(perm)` for route handlers.
-- `app/(app)/team/page.tsx` — example: a page gated server-side on `hasPermission('*')`.
+- `app/(app)/admin/page.tsx` — the live example: gated server-side on `hasPermission('*')`, with
+  the API routes it calls (`app/api/admin/members/*`) gated the same way. Read it before writing
+  your own gated page — don't build a second member-management page, extend this one.
 
 ## Using it
 
@@ -15,7 +17,7 @@ Every user has a `role` (`owner` / `member`) and a `permissions` array (`owner` 
 import { hasPermission } from '@/lib/permissions';
 
 if (!(await hasPermission('*'))) {
-  return <p>You don&apos;t have access to manage the team.</p>;
+  return <p>You don&apos;t have access to manage this project.</p>;
 }
 ```
 

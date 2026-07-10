@@ -4,8 +4,15 @@ import { Card } from '@/components/ui/card';
 
 export default async function DataPage() {
   const user = await requireUser();
+
   // Scoped to the current user — never fetch-all-then-filter. See docs/db.md.
-  const items = await list('items', { ownerEmail: user.email });
+  let items: Record<string, unknown>[] = [];
+  let notConfigured = false;
+  try {
+    items = await list('items', { ownerEmail: user.email });
+  } catch {
+    notConfigured = true;
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -15,10 +22,13 @@ export default async function DataPage() {
       </div>
 
       <Card>
-        {items.length === 0 ? (
+        {notConfigured ? (
           <p className="text-sm text-muted">
-            No rows yet. Set INSFORGE_URL / INSFORGE_API_KEY, or insert a row for this user.
+            No database connected yet — open the <strong className="text-foreground">Database</strong>{' '}
+            tab on this project in Viper to get set up. See <code>docs/db.md</code>.
           </p>
+        ) : items.length === 0 ? (
+          <p className="text-sm text-muted">No rows yet for {user.email}.</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {items.map((item, i) => (

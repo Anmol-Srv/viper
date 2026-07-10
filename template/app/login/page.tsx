@@ -63,7 +63,7 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-surface px-4">
+    <main className="flex min-h-screen items-center justify-center bg-background px-4">
       <Card className="w-full max-w-sm">
         <h1 className="mb-1 text-lg font-semibold text-foreground">Sign in</h1>
         <p className="mb-6 text-sm text-muted">
@@ -79,7 +79,7 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
               required
             />
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-danger">{error}</p>}
             <Button type="submit" loading={loading}>
               Send code
             </Button>
@@ -95,7 +95,7 @@ export default function LoginPage() {
               required
             />
             {devHint && <p className="text-xs text-muted">{devHint}</p>}
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-danger">{error}</p>}
             <Button type="submit" loading={loading}>
               Verify
             </Button>

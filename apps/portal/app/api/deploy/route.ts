@@ -22,6 +22,21 @@ const TERMINAL = new Set(["finished", "failed", "cancelled-by-user"]);
 const POLL_MS = 3000;
 const POLL_TIMEOUT_MS = 5 * 60 * 1000;
 
+// Human-readable deploy failure UX (SPEC §2.4). Two of the three cases are diagnosable here;
+// "portal unreachable" is a CLI-side case (the CLI can't even reach this route) — out of scope
+// for apps/portal, see template/scripts/deploy.mjs.
+const HINTS = {
+  build: "Docker build failed — scroll up for the compile/build error lines above, fix them, then redeploy.",
+  deploy: "Deploy failed — see the container's log tail below, or run `npm run doctor` locally.",
+  other: "Unexpected deploy error — if this persists, ask the platform admin (Viper may be down).",
+};
+
+function classify(message: string): keyof typeof HINTS {
+  if (/^docker (build|push)/.test(message)) return "build";
+  if (/deploy ended with status/.test(message)) return "deploy";
+  return "other";
+}
+
 function extractTarball(tarPath: string, destDir: string) {
   execFileSync("tar", ["-xzf", tarPath, "-C", destDir]);
 }
@@ -89,6 +104,9 @@ export async function POST(req: NextRequest) {
     async start(controller) {
       const enc = new TextEncoder();
       const emit = (obj: Record<string, unknown>) => controller.enqueue(enc.encode(JSON.stringify(obj) + "\n"));
+      // Hoisted so the catch block (and the non-throwing "deploy failed" branch) can still
+      // fetch a log tail for an app that was already created before the failure.
+      let appUuid: string | undefined = rec.coolify?.appUuid;
       try {
         emit({ status: "extracted & scrubbed .env.local" });
 
@@ -101,7 +119,6 @@ export async function POST(req: NextRequest) {
         });
         emit({ status: `pushed ${image}:${tag}` });
 
-        let appUuid = rec.coolify?.appUuid;
         let url = rec.coolify?.url;
 
         if (!appUuid) {
@@ -121,6 +138,7 @@ export async function POST(req: NextRequest) {
               // session cookie Secure flag follows the serving scheme (http on the laptop)
               COOKIE_SECURE: (process.env.VIPER_DOMAIN_SCHEME || "http") === "https" ? "1" : "0",
               // Never inject AUTH_DEV_BYPASS here — its absence is what turns the login wall on.
+              ...(rec.db?.internalUrl ? { DATABASE_URL: rec.db.internalUrl } : {}),
             },
           });
           appUuid = created.appUuid;
@@ -155,14 +173,21 @@ export async function POST(req: NextRequest) {
         }
 
         if (finalStatus !== "finished") {
-          emit({ ok: false, error: `deploy ended with status "${finalStatus}"` });
+          const error = `deploy ended with status "${finalStatus}"`;
+          const logTail = appUuid ? await coolify.getLogs(appUuid).catch(() => undefined) : undefined;
+          emit({ ok: false, error, hint: HINTS.deploy, logTail });
           return;
         }
 
-        store.update(rec.projectId, { lastImageTag: tag, lastDeployAt: new Date().toISOString() });
+        store.addDeploy(rec.projectId, tag);
         emit({ ok: true, url, tag });
       } catch (e: any) {
-        emit({ ok: false, error: e.message });
+        const message = e?.message || String(e);
+        const kind = classify(message);
+        // A build failure has no live app to fetch logs from yet; the compile lines are
+        // already streamed above, so only fetch a container log tail for the other cases.
+        const logTail = kind !== "build" && appUuid ? await coolify.getLogs(appUuid).catch(() => undefined) : undefined;
+        emit({ ok: false, error: message, hint: HINTS[kind], logTail });
       } finally {
         fs.rmSync(stagingDir, { recursive: true, force: true });
         controller.close();

@@ -1,28 +1,37 @@
-// ponytail: minimal REST wrapper around Insforge, untested against a live instance.
-// Swap in the real Insforge SDK/query builder once the schema is known — the two
-// functions below are the whole surface area, so callers won't need to change.
+// ponytail: thin, provider-agnostic facade — every field the app touches for its database goes
+// through list()/insert() below. The concrete client (Insforge REST, today) lives entirely in
+// this one file, so swapping providers later is a single-file change; callers never change.
 
 const BASE_URL = process.env.INSFORGE_URL;
 const API_KEY = process.env.INSFORGE_API_KEY;
 
 type Row = Record<string, unknown>;
 
+function assertConfigured(): void {
+  if (!BASE_URL || !API_KEY) {
+    throw new Error(
+      'Database not configured — open the Database tab on this project in Viper, then see docs/db.md.',
+    );
+  }
+}
+
 /** Lists rows from `table`, optionally filtered by exact-match query params. */
 export async function list(table: string, filter: Record<string, string> = {}): Promise<Row[]> {
-  if (!BASE_URL || !API_KEY) return []; // dev fallback: no db configured yet
+  assertConfigured();
 
   const params = new URLSearchParams(filter);
   const res = await fetch(`${BASE_URL}/${table}?${params}`, {
     headers: { Authorization: `Bearer ${API_KEY}` },
     cache: 'no-store',
   });
-  if (!res.ok) return [];
+  if (res.status === 404) return []; // table doesn't exist yet — not an error, just empty
+  if (!res.ok) throw new Error(`Database error (${res.status}) listing ${table}`);
   return res.json();
 }
 
-/** Inserts a row into `table`. Returns the created row, or null if the db isn't configured. */
-export async function insert(table: string, row: Row): Promise<Row | null> {
-  if (!BASE_URL || !API_KEY) return null;
+/** Inserts a row into `table`. Returns the created row. */
+export async function insert(table: string, row: Row): Promise<Row> {
+  assertConfigured();
 
   const res = await fetch(`${BASE_URL}/${table}`, {
     method: 'POST',
@@ -32,6 +41,6 @@ export async function insert(table: string, row: Row): Promise<Row | null> {
     },
     body: JSON.stringify(row),
   });
-  if (!res.ok) return null;
+  if (!res.ok) throw new Error(`Database error (${res.status}) inserting into ${table}`);
   return res.json();
 }
