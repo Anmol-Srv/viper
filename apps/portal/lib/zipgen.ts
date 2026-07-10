@@ -22,7 +22,8 @@ export type GenInput = {
   clientSecret: string; // plaintext — shipped in the zip's .env.local so the local /admin panel works (scoped, rotatable)
   authServiceUrl: string;
   viperUrl: string;
-  databaseUrl?: string; // set only when the `db` module was selected AND provisioning succeeded
+  databaseUrl?: string; // legacy postgres-style URL (unused in insforge mode)
+  dbEnv?: { url: string; apiKey: string }; // Insforge creds → INSFORGE_URL/INSFORGE_API_KEY lines
 };
 
 function readManifest(): Manifest {
@@ -113,7 +114,11 @@ export async function generateZip(input: GenInput): Promise<{ zipFile: string }>
     `AUTH_CLIENT_SECRET=${input.clientSecret}`,
     `VIPER_URL=${input.viperUrl}`,
     `VIPER_DEPLOY_TOKEN=${input.deployToken}`,
-    ...(presentModules.includes("db") && input.databaseUrl ? [`DATABASE_URL=${input.databaseUrl}`] : []),
+    ...(presentModules.includes("db") && input.dbEnv
+      ? [`INSFORGE_URL=${input.dbEnv.url}`, `INSFORGE_API_KEY=${input.dbEnv.apiKey}`]
+      : presentModules.includes("db") && input.databaseUrl
+        ? [`DATABASE_URL=${input.databaseUrl}`]
+        : []),
     ``,
   ].join("\n");
   fs.writeFileSync(path.join(staging, ".env.local"), envLocal);

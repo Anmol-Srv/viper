@@ -88,6 +88,7 @@ export async function POST(req: NextRequest) {
     authServiceUrl: AUTH,
     viperUrl: VIPER_URL,
     databaseUrl: db?.localUrl,
+    dbEnv: db?.url && db?.apiKey ? { url: db.url, apiKey: db.apiKey } : undefined,
   });
 
   // 4. record for the dashboard + deploy validation. Members are NOT seeded here (v1.3 B2) —

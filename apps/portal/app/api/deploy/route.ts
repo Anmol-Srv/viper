@@ -118,6 +118,7 @@ export async function POST(req: NextRequest) {
               HOSTNAME: "0.0.0.0",
               PORT: "3000",
               COOKIE_SECURE: (process.env.VIPER_DOMAIN_SCHEME || "http") === "https" ? "1" : "0",
+              ...(rec.db?.url && rec.db?.apiKey ? { INSFORGE_URL: rec.db.url, INSFORGE_API_KEY: rec.db.apiKey } : {}),
               ...(rec.db?.internalUrl ? { DATABASE_URL: rec.db.internalUrl } : {}),
             },
           });
@@ -184,6 +185,7 @@ export async function POST(req: NextRequest) {
               // session cookie Secure flag follows the serving scheme (http on the laptop)
               COOKIE_SECURE: (process.env.VIPER_DOMAIN_SCHEME || "http") === "https" ? "1" : "0",
               // Never inject AUTH_DEV_BYPASS here — its absence is what turns the login wall on.
+              ...(rec.db?.url && rec.db?.apiKey ? { INSFORGE_URL: rec.db.url, INSFORGE_API_KEY: rec.db.apiKey } : {}),
               ...(rec.db?.internalUrl ? { DATABASE_URL: rec.db.internalUrl } : {}),
             },
           });

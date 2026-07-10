@@ -9,27 +9,38 @@
 // provisionDatabase() once implemented, see SPEC §0.3's mapping).
 const INSFORGE_USER_API_KEY = process.env.INSFORGE_USER_API_KEY || "";
 const INSFORGE_ORG_ID = process.env.INSFORGE_ORG_ID || "";
+// Shared-project mode (hackathon v1): every db-module project gets the SAME Insforge project's
+// URL + API key. ponytail: no per-project data isolation — upgrade path is per-project creation
+// via `npx @insforge/cli create --json` once a uak_ user API key exists (see SPEC v1.3 §0.3).
+const SHARED_URL = process.env.INSFORGE_SHARED_URL || "";
+const SHARED_API_KEY = process.env.INSFORGE_SHARED_API_KEY || "";
 
-export const configured = () => Boolean(INSFORGE_USER_API_KEY && INSFORGE_ORG_ID);
+export const configured = () => Boolean(SHARED_URL && SHARED_API_KEY) || Boolean(INSFORGE_USER_API_KEY && INSFORGE_ORG_ID);
 
 export type DbRecord = {
   provider: "insforge";
-  ref: string; // provider-side id, passed back into deleteDatabase() for teardown
-  localUrl?: string; // builder's machine
-  internalUrl?: string; // deployed container env
-  dashboardUrl?: string; // link to the provider's own console for this DB
+  ref: string; // provider-side id, passed back into deleteDatabase() for teardown ("shared" = do not delete)
+  url?: string; // Insforge backend base URL → INSFORGE_URL in the app env (same local + deployed)
+  apiKey?: string; // Insforge project API key → INSFORGE_API_KEY (server-only)
+  localUrl?: string; // legacy postgres-style field, unused in insforge mode
+  internalUrl?: string;
+  dashboardUrl?: string;
 };
 
 export type ProvisionResult = { configured: boolean; db?: DbRecord; error?: string };
 
-// ponytail: stub until Insforge's real API is confirmed — same return shape every caller
-// already expects, so wiring the real HTTP calls in here is the only change needed later.
 export async function provisionDatabase(_projectName: string): Promise<ProvisionResult> {
+  if (SHARED_URL && SHARED_API_KEY) {
+    return {
+      configured: true,
+      db: { provider: "insforge", ref: "shared", url: SHARED_URL, apiKey: SHARED_API_KEY, dashboardUrl: "https://insforge.dev" },
+    };
+  }
   if (!configured()) return { configured: false };
-  return { configured: true, error: "Insforge provisioning not implemented yet" };
+  return { configured: true, error: "per-project Insforge provisioning needs a uak_ key — shared mode via INSFORGE_SHARED_URL/INSFORGE_SHARED_API_KEY" };
 }
 
-export async function deleteDatabase(_ref: string): Promise<void> {
-  if (!configured()) return;
-  // no-op until implemented — teardown stays best-effort either way (see route.ts callers)
+export async function deleteDatabase(ref: string): Promise<void> {
+  if (ref === "shared") return; // shared project is never deleted by teardown
+  // per-project deletion lands with uak_ mode
 }
