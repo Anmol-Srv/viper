@@ -2,7 +2,8 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Card, CardTitle } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 
 type Member = { email: string; role: string; status: string };
@@ -92,26 +93,24 @@ export function AdminMembers() {
   };
 
   if (loading) {
-    return <Card className="text-sm text-muted">Loading members…</Card>;
+    return <p className="px-1 text-sm text-muted">Loading members…</p>;
   }
 
   if (unavailable) {
     return (
-      <Card>
-        <p className="text-sm text-muted">
-          Can&apos;t reach the auth service right now — connect to the auth service to manage real
-          members. This is expected if the auth service isn&apos;t running locally; nothing here is
-          broken.
-        </p>
-      </Card>
+      <EmptyState
+        title="Auth service unavailable"
+        description="Member management needs the auth service running. Start it locally, or check AUTH_SERVICE_URL — nothing here is broken."
+      />
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
       <Card>
-        <form onSubmit={invite} className="flex flex-wrap items-end gap-3">
-          <div className="flex-1 min-w-[220px]">
+        <CardTitle>Invite a member</CardTitle>
+        <form onSubmit={invite} className="mt-3 flex flex-wrap items-end gap-3">
+          <div className="min-w-[220px] flex-1">
             <label className="mb-1 block text-xs text-muted">Email</label>
             <Input
               type="email"
@@ -126,7 +125,7 @@ export function AdminMembers() {
             <select
               value={role}
               onChange={(e) => setRole(e.target.value as Role)}
-              className="border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline focus:outline-1 focus:outline-white"
+              className="rounded border border-border bg-background px-3 py-2 text-sm text-foreground transition-colors focus:outline focus:outline-1 focus:outline-white"
             >
               <option value="member">member</option>
               <option value="owner">owner</option>
@@ -139,40 +138,43 @@ export function AdminMembers() {
         {error && <p className="mt-3 text-sm text-danger">{error}</p>}
       </Card>
 
-      <Card>
+      <Card padded={false} className="overflow-hidden">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="border-b border-border text-muted">
-              <th className="py-2 font-medium">Email</th>
-              <th className="py-2 font-medium">Role</th>
-              <th className="py-2 font-medium">Status</th>
-              <th className="py-2 font-medium" />
+            <tr className="border-b border-border bg-panel2 text-muted">
+              <th className="px-6 py-3 text-xs font-medium uppercase tracking-wide">Email</th>
+              <th className="px-6 py-3 text-xs font-medium uppercase tracking-wide">Role</th>
+              <th className="px-6 py-3 text-xs font-medium uppercase tracking-wide">Status</th>
+              <th className="px-6 py-3" />
             </tr>
           </thead>
           <tbody>
             {(members ?? []).length === 0 ? (
               <tr>
-                <td colSpan={4} className="py-4 text-muted">
+                <td colSpan={4} className="px-6 py-10 text-center text-muted">
                   No members yet — invite one above.
                 </td>
               </tr>
             ) : (
               (members ?? []).map((member) => (
-                <tr key={member.email} className="border-b border-border last:border-0">
-                  <td className="py-2 text-foreground">{member.email}</td>
-                  <td className="py-2">
+                <tr
+                  key={member.email}
+                  className="border-b border-border transition-colors last:border-0 hover:bg-panel2/60"
+                >
+                  <td className="px-6 py-3 text-foreground">{member.email}</td>
+                  <td className="px-6 py-3">
                     <select
                       value={member.role}
                       onChange={(e) => changeRole(member.email, e.target.value as Role)}
-                      className="border border-border bg-background px-2 py-1 text-sm text-foreground focus:outline focus:outline-1 focus:outline-white"
+                      className="rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground transition-colors focus:outline focus:outline-1 focus:outline-white"
                     >
                       <option value="member">member</option>
                       <option value="owner">owner</option>
                     </select>
                   </td>
-                  <td className="py-2 capitalize text-muted">{member.status}</td>
-                  <td className="py-2 text-right">
-                    <Button variant="danger" onClick={() => remove(member.email)}>
+                  <td className="px-6 py-3 capitalize text-muted">{member.status}</td>
+                  <td className="px-6 py-3 text-right">
+                    <Button variant="danger" size="sm" onClick={() => remove(member.email)}>
                       Remove
                     </Button>
                   </td>

@@ -141,7 +141,10 @@ export default function Home() {
           {result?.error && <div className="err">{result.error}</div>}
           {result?.ok && result.subdomain && (
             <div className="result">
-              <h3>{result.subdomain} created</h3>
+              <h3>
+                <span className="ok-mark">✓</span> Project created
+              </h3>
+              <p className="result-sub">{result.subdomain}</p>
               <a className="dl" href={result.downloadUrl}>
                 Download {result.subdomain}.zip
               </a>

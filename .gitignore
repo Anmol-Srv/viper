@@ -8,3 +8,4 @@ node_modules/
 apps/portal/data/
 apps/portal/output/
 *.tsbuildinfo
+.gstack/

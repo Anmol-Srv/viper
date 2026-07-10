@@ -40,10 +40,13 @@ code {
 }
 .sub { color: var(--muted); margin: 0 0 32px; font-size: 13px; }
 
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-@media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+@media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
 
-.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+/* min-width: 0 overrides the grid/flex-item default of min-width: auto — without it, a long
+   unbroken string (a code line, a URL) forces its track to grow past the 1fr allocation and
+   blows the whole page out past .wrap's max-width. Root cause of the "sprawls full width" bug. */
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; min-width: 0; }
 .card h2 { font-size: 14px; margin: 0 0 16px; font-weight: 600; }
 .card.danger-card { border-color: var(--danger); }
 .card.danger-card h2 { color: var(--danger); }
@@ -100,8 +103,12 @@ button.danger-btn:disabled { opacity: 0.5; cursor: default; }
 button.link-btn { background: none; border: 0; color: var(--muted); font-size: 12px; cursor: pointer; padding: 0; text-decoration: underline; }
 button.link-btn:hover { color: var(--danger); }
 
-.result { margin-top: 16px; border: 1px solid var(--ok); border-radius: var(--radius); padding: 16px; }
-.result h3 { margin: 0 0 8px; font-size: 13px; color: var(--ok); font-weight: 600; }
+/* Success state: a calm top accent line + check mark, not a loud full-box border (SPEC:
+   status colors are for status, not decoration). Lives inside the card's own column. */
+.result { margin-top: 24px; padding-top: 18px; border-top: 2px solid var(--ok); }
+.result h3 { margin: 0 0 4px; font-size: 15px; color: var(--text); font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.result h3 .ok-mark { color: var(--ok); font-size: 13px; line-height: 1; }
+.result .result-sub { margin: 0 0 14px; font-size: 12px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
 .err { margin-top: 14px; color: var(--danger); font-size: 13px; border-left: 2px solid var(--danger); padding-left: 8px; }
 
@@ -109,8 +116,12 @@ button.link-btn:hover { color: var(--danger); }
 .steps code { background: var(--panel-2); padding: 1px 6px; color: var(--text); }
 
 .plist { margin-top: 8px; }
-.prow { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.prow {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px; margin: 0 -20px; border-bottom: 1px solid var(--border);
+}
 .prow:last-child { border-bottom: 0; }
+.prow:hover { background: var(--panel-2); }
 .prow .n { font-size: 13px; }
 .prow .m { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
@@ -126,17 +137,25 @@ button.link-btn:hover { color: var(--danger); }
 .table th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; }
 .table td.muted-cell { color: var(--muted); width: 110px; }
 .table tr:last-child td { border-bottom: 1px solid var(--border); }
+.table tbody tr:hover td { background: var(--panel-2); }
 
 /* Getting-started (SPEC §2.1/2.2) */
-.getting-started { display: flex; flex-direction: column; gap: 18px; }
-.gs-step { display: flex; gap: 12px; align-items: flex-start; }
-.gs-step p { margin: 0; font-size: 13px; color: var(--text); line-height: 1.6; }
+.getting-started { display: flex; flex-direction: column; gap: 22px; }
+.gs-step { display: flex; gap: 14px; align-items: flex-start; min-width: 0; }
+.gs-step > div:not(.gs-num) { min-width: 0; flex: 1; }
+.gs-step p { margin: 0; font-size: 13px; color: var(--text); line-height: 1.65; }
 .gs-num {
   flex: none; width: 20px; height: 20px; border-radius: var(--radius); background: var(--panel-2);
   border: 1px solid var(--border); display: grid; place-items: center; font-size: 11px; color: var(--muted); margin-top: 1px;
 }
-.gs-code { display: flex; align-items: center; gap: 8px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; margin-top: 8px; }
-.gs-code code { flex: 1; font-size: 12px; overflow-x: auto; white-space: pre; color: var(--text); }
+/* min-width: 0 on both the flex container and the code child is what makes overflow-x: auto
+   actually kick in below, instead of the unbroken text forcing the block wider than its card. */
+.gs-code { display: flex; align-items: center; gap: 8px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; margin-top: 8px; min-width: 0; }
+.gs-code code {
+  flex: 1; min-width: 0; font-size: 12px; overflow-x: auto; white-space: pre; color: var(--text);
+  /* fade the trailing edge so a clipped line reads as "scroll for more", not "cut off" */
+  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+}
 .copy-btn { flex: none; background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius); padding: 5px 10px; font-size: 12px; cursor: pointer; }
 .copy-btn:hover { border-color: var(--text); }
 
@@ -148,8 +167,10 @@ button.link-btn:hover { color: var(--danger); }
 .tab { background: none; border: 0; color: var(--muted); padding: 10px 14px; cursor: pointer; font-size: 13px; border-bottom: 2px solid transparent; font-family: inherit; }
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--text); border-color: #fff; }
-.deploy-row { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--muted); }
+.deploy-row { display: flex; justify-content: space-between; padding: 9px 20px; margin: 0 -20px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--muted); }
 .deploy-row:last-child { border-bottom: 0; }
-.member-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.deploy-row:hover { background: var(--panel-2); }
+.member-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; margin: 0 -20px; border-bottom: 1px solid var(--border); font-size: 13px; }
 .member-row:last-child { border-bottom: 0; }
+.member-row:hover { background: var(--panel-2); }
 .role-badge { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: var(--radius); padding: 2px 8px; text-transform: uppercase; letter-spacing: 0.02em; }

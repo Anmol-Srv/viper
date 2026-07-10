@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import viperConfig from '@/viper.json';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -63,7 +64,14 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-4">
+    <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-background px-4">
+      <div className="flex flex-col items-center gap-2">
+        <span className="flex h-9 w-9 items-center justify-center rounded bg-white text-sm font-bold text-black">
+          {(viperConfig.name || 'V').charAt(0).toUpperCase()}
+        </span>
+        <span className="text-sm font-medium text-muted">{viperConfig.name}</span>
+      </div>
+
       <Card className="w-full max-w-sm">
         <h1 className="mb-1 text-lg font-semibold text-foreground">Sign in</h1>
         <p className="mb-6 text-sm text-muted">
